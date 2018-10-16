@@ -19,8 +19,8 @@ train_text_tokenized_mnli= pd.read_pickle("MNLI_train_text_tokenized.pkl")
 val_text_tokenized_mnli = pd.read_pickle("MNLI_train_text_tokenized.pkl")
 snli_data = train_text_tokenized.append(val_text_tokenized)
 mnli_data =  train_text_tokenized_mnli.append(val_text_tokenized_mnli)
-MAX_SENTENCE_LENGTH_FIRST = max( max(snli_data[["sentence1"]].apply(lambda x: len(x))), max(mnli_data[["sentence1"]].apply(lambda x: len(x))))
-MAX_SENTENCE_LENGTH_SECOND = max( max(mnli_data[["sentence2"]].apply(lambda x: len(x))), max(mnli_data[["sentence2"]].apply(lambda x: len(x))))
+MAX_SENTENCE_LENGTH_FIRST =max(snli_data["sentence1"].apply(lambda x: len(x)).tolist())
+MAX_SENTENCE_LENGTH_SECOND = max(snli_data["sentence2"].apply(lambda x: len(x)).tolist())
 all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
 VOCAB_NUM = len(all_tokens)
 # what's the vocab size? 
@@ -176,10 +176,8 @@ pickle.dump(current_matrix, open("idx2vectorGLOVE50K", "wb"))
 all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
 current_word2idx = pickle.load(open("word2idx50K", "rb"))
 train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
-train_text_tokenized = tokenize_labels(train_text_tokenized)
-pickle.dump(train_text_tokenized, open("train_text_tokenized.pkl", "wb"))
-
 current_matrix = pickle.load(open("idx2vectorGLOVE50K", "rb"))
+
 vocab_size = len(current_word2idx) # this is the vocab size
 train_text_tokenized = train_text_tokenized.iloc[:20] # just do a batch of 20 for testing. 
 train_text_tokenized["sentence1"] = train_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
@@ -204,9 +202,19 @@ pickle.dump(train_loader,open( "trainloader", "wb"))
 
 """
 NOW THE TRAINING 
+"""
+column_keys = list(current_matrix.keys())
+max_index = max(column_keys)
+weights = []
+for i in range(max_index):
+	if i in column_keys:
+		# if index is in the curent matrix, thus it's an index thatw will be accessed
+		weights.append(current_matrix[i])
+	else:
+		weights.append(current_matrix[1]) # else, there's no glove vector (it shouldn't access anyways due to 
+		# how we tokenized the vectors and built current_matrix at the same time. )
 
-
-model = RNN(emb_size=100, hidden_size=200, num_layers=2, num_classes=5, vocab_size=len(current_word2idx), weight=current_matrix)
+model = RNN(emb_size=100, hidden_size=200, num_layers=2, num_classes=5, vocab_size=len(current_word2idx), weight=weights)
 learning_rate = 3e-4
 num_epochs = 10 # number epoch to train
 
