@@ -14,7 +14,7 @@ from RNN_Class import *
 
 
 train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
-val_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
+val_text_tokenized = pd.read_pickle("val_text_tokenized.pkl")
 train_text_tokenized_mnli= pd.read_pickle("MNLI_train_text_tokenized.pkl")
 val_text_tokenized_mnli = pd.read_pickle("MNLI_train_text_tokenized.pkl")
 snli_data = train_text_tokenized.append(val_text_tokenized)
@@ -173,13 +173,14 @@ current_matrix, current_word2idx = tokenize_all_vectors(list(all_tokens), glove_
 pickle.dump(current_word2idx, open("word2idx50K", "wb"))
 pickle.dump(current_matrix, open("idx2vectorGLOVE50K", "wb"))
 """
+
 all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
 current_word2idx = pickle.load(open("word2idx50K", "rb"))
 train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
 current_matrix = pickle.load(open("idx2vectorGLOVE50K", "rb"))
 
 vocab_size = len(current_word2idx) # this is the vocab size
-train_text_tokenized = train_text_tokenized.iloc[:20] # just do a batch of 20 for testing. 
+train_text_tokenized = train_text_tokenized.iloc[:2000] # just do a batch of 20 for testing. 
 train_text_tokenized["sentence1"] = train_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
 
 train_text_tokenized["sentence2"] = train_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
@@ -189,7 +190,7 @@ train_text_tokenized["sentence2"] = train_text_tokenized["sentence2"].apply(lamb
 # we need to sort by decreasing order first. 
 pickle.dump(train_text_tokenized, open("train_token_indexed.pkl", "wb"))
 
-BATCH_SIZE = 32
+BATCH_SIZE = 20 #32
 
 train_dataset = NewsGroupDataset(train_text_tokenized["sentence1"].values.tolist(), train_text_tokenized["sentence2"].values.tolist(), train_text_tokenized["label"].values.tolist())
 
@@ -198,6 +199,20 @@ train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                            batch_size=BATCH_SIZE,
                                            collate_fn=entailment_collate_func_concat,
                                            shuffle=True)
+val_text_tokenized = val_text_tokenized.iloc[:2000] 
+pdb.set_trace()
+val_text_tokenized["sentence1"] = val_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
+
+val_text_tokenized["sentence2"] = val_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
+val_dataset = NewsGroupDataset(val_text_tokenized["sentence1"].values.tolist(), val_text_tokenized["sentence2"].values.tolist(), val_text_tokenized["label"].values.tolist())
+val_loader = torch.utils.data.DataLoader(dataset=val_dataset, 
+                                           batch_size=BATCH_SIZE,
+                                           collate_fn=entailment_collate_func_concat,
+                                           shuffle=True)
+
+# sort the sentneces based on the length of the two sentences combined. 
+
+
 pickle.dump(train_loader,open( "trainloader", "wb"))
 
 """
@@ -238,9 +253,10 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         # validate every 100 iterations
-        if i > 0 and i % 100 == 0:
+        if i > 0 and i % 90 == 0:
             # validate
             val_acc = test_model(val_loader, model)
+            pdb.set_trace()
             print('Epoch: [{}/{}], Step: [{}/{}], Validation Acc: {}'.format(
                        epoch+1, num_epochs, i+1, len(train_loader), val_acc))
 
