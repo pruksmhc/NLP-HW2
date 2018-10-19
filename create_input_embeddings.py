@@ -70,11 +70,12 @@ def entailment_collate_func_concat(batch):
     	length_list_first.append(datum[1][0])
     	length_list_second.append(datum[1][1])
     	label_list.append(datum[2])
-    sorted_first = sorted(first_data_list)
-    sorted_second = sorted(second_data_list)
-    import pdb; pdb.set_trace()
-    order_one = sorted(range(len(length_list_first)), key=lambda k: first_data_list[k])
-    order_two = sorted(range(len(length_list_second)), key=lambda k: second_data_list[k])
+    sorted_first = sorted(first_data_list, key=lambda e: len(e), reverse=True)
+    sorted_second = sorted(second_data_list, key=lambda e: len(e), reverse=True)
+    order_one = sorted(range(len(length_list_first)), key=lambda k: len(first_data_list[k]), reverse=True)
+    order_two = sorted(range(len(length_list_second)), key=lambda k: len(second_data_list[k]), reverse=True)
+    length_first =  sorted(length_list_first, reverse=True)
+    length_second = sorted(length_list_second, reverse=True)
 
     # Asser tthat the indexing is the same 
     for i in range(len(sorted_first)):
@@ -91,8 +92,7 @@ def entailment_collate_func_concat(batch):
     	second_sentence.extend([0]*(MAX_SENTENCE_LENGTH_SECOND-len(second_sentence)))
     	data_list_first.append(first_sentence)
     	data_list_second.append(second_sentence)
-    import pdb; pdb.set_trace()
-    return [torch.LongTensor(data_list_first), torch.LongTensor(data_list_second), torch.LongTensor(length_list_first),  torch.LongTensor(length_list_second), torch.LongTensor( order_one), torch.LongTensor( order_two), torch.LongTensor(label_list)]
+    return [torch.LongTensor(data_list_first), torch.LongTensor(data_list_second), torch.LongTensor(length_first),  torch.LongTensor(length_second), torch.LongTensor( order_one), torch.LongTensor( order_two), torch.LongTensor(label_list)]
 
 # create pytorch dataloader
 #train_loader = NewsGroupDataset(train_data_indices, train_targets)
@@ -213,8 +213,7 @@ for i in range(max_index):
 	else:
 		weights.append(current_matrix[1]) # else, there's no glove vector (it shouldn't access anyways due to 
 		# how we tokenized the vectors and built current_matrix at the same time. )
-
-model = RNN(emb_size=100, hidden_size=200, num_layers=2, num_classes=5, vocab_size=len(current_word2idx), weight=weights)
+model = RNN(emb_size=50, hidden_size=200, num_layers=1, num_classes=3, vocab_size=len(current_word2idx), weight=torch.FloatTensor(weights))
 learning_rate = 3e-4
 num_epochs = 10 # number epoch to train
 
@@ -249,6 +248,4 @@ for epoch in range(num_epochs):
 # then you have the data_loader. 
 #train_iter = data.BucketIterator( 
 #	dataset=mt_train, batch_size=32,  
-#	sort_key=lambda x: data.interleave_keys(len(x.src), len(x.trg)))
-
 

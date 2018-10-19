@@ -1,3 +1,11 @@
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import pdb
+import numpy as np
+
 class CNN(nn.Module):
     def __init__(self, emb_size, hidden_size, num_layers, num_classes, vocab_size):
 
@@ -14,7 +22,7 @@ class CNN(nn.Module):
     def forward(self, x, lengths):
         batch_size, seq_len = x.size()
 
-        embed = self.embedding(x)
+        embed1 = self.embedding(x)
         hidden = self.conv1(embed.transpose(1,2)).transpose(1,2)
         hidden = F.relu(hidden.contiguous().view(-1, hidden.size(-1))).view(batch_size, seq_len, hidden.size(-1))
 
@@ -24,3 +32,9 @@ class CNN(nn.Module):
         hidden = torch.sum(hidden, dim=1)
         logits = self.linear(hidden)
         return logits
+
+
+
+
+
+

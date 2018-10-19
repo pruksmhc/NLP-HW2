@@ -3,6 +3,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pdb
+import numpy as np 
+
 class RNN(nn.Module):
     def __init__(self, emb_size, hidden_size, num_layers, num_classes, vocab_size, weight):
         # RNN Accepts the following hyperparams:
@@ -16,26 +19,43 @@ class RNN(nn.Module):
         self.num_layers, self.hidden_size = num_layers, hidden_size
         self.embedding = nn.Embedding.from_pretrained(weight)
         #self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
-        self.rnn = nn.RNN(emb_size, hidden_size, num_layers, batch_first=True)
+        self.gru = nn.GRU(emb_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
         # the input vector is size emb_size
-        self.linear = nn.Linear(hidden_size, num_classes)
+        self.linear = nn.Linear(4*hidden_size, num_classes*30)
+        self.linear2 = nn.Linear( num_classes*30, num_classes)
+        self.softmax = nn.Softmax(dim=1)
 
     def init_hidden(self, batch_size):
         # Function initializes the activation of recurrent neural net at timestep 0
         # Needs to be in format (num_layers, batch_size, hidden_size)
-        hidden = torch.randn(self.num_layers, batch_size, self.hidden_size)
+        hidden = torch.randn(2, batch_size, self.hidden_size)
 
         return hidden
+    def reorder(self, arr,index):
+        # Used GeekForGeeks' solution: https://www.geeksforgeeks.org/reorder-a-array-according-to-given-indexes/
+        n = len(index)
+        temp = [0] * n; 
+      
+        # arr[i] should be 
+            # present at index[i] index 
+        for i in range(0,n): 
+            temp[index[i]] = arr[i] 
+      
+        # Copy temp[] to arr[] 
+        for i in range(0,n): 
+            arr[i] = temp[i] 
+            index[i] = i 
+        return arr
 
     def forward(self, first_sentence_batch, second_sentence_batch, length1, length2, order_1, order_2):
         # reset hidden state
 
-        batch_size, seq_len = x.size()
+        batch_size, seq_len_one= first_sentence_batch.size()
+        _, seq_len_sec = first_sentence_batch.size()
 
         self.hidden = self.init_hidden(batch_size)
-
         # get embedding of characters
-        pdb.set_trace()
+        #ENCODER 
         embed1 = self.embedding(first_sentence_batch)
         embed2 = self.embedding(second_sentence_batch)
         # pack padded sequence (which means that, given a sequence that is padded, remove all the 0s so you only get)
@@ -43,18 +63,35 @@ class RNN(nn.Module):
         embed1 = torch.nn.utils.rnn.pack_padded_sequence(embed1, length1.numpy(), batch_first=True)
         embed2 = torch.nn.utils.rnn.pack_padded_sequence(embed2, length2.numpy(), batch_first=True)
         # fprop though RNN
-        rnn_out_1, self.hidden_1 = self.rnn(embed1, self.hidden)
-        rnn_out_2, self.hidden_2 = self.rnn(embed2, self.hidden)
-        # undo packing, this basically inserts back the zeroes
-        rnn_out_1, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_1, batch_first=True)
-        rnn_out_2, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_1, batch_first=True)
-        out_final = rnn_out_1.concat(rnn_out_2)
-        # sum hidden activations of RNN across time
-        rnn_final = torch.sum(rnn_final, dim=1)
+        rnn_out_1, self.hidden_1 = self.gru(embed1, self.hidden)
+        rnn_out_2, self.hidden_2 = self.gru(embed2, self.hidden)
+        # concat the first column 
+        hidden_concat_first = torch.cat((self.hidden_1[0], self.hidden_1[1]), dim=1)
+        hidden_concat_sec = torch.cat((self.hidden_2[0], self.hidden_2[1]), dim=1)
 
-        logits = self.linear(rnn_final)
+        # now, we rearrange to get the correct ordering
+        hcf = hidden_concat_first.clone().detach().numpy().tolist()
+        hcs = hidden_concat_sec.clone().detach().numpy().tolist()
+
+        # assert that they're indeed the same (shuffled correctly)
+        #assert hcf[order_1[i]] == hidden_concat_first[i] for i in range(len(hidden_concat_first))
+        hidden_concat_first = torch.FloatTensor(self.reorder(hcf, order_1.numpy().tolist()))
+        hidden_concat_sec =  torch.FloatTensor(self.reorder(hcs, order_2.numpy().tolist()))
+        
+        final_hidden = torch.cat((hidden_concat_first, hidden_concat_sec), dim=1)
+        # revrese is in the first dimension
+        # undo packing, this basically inserts back the zeroes
+        rnn_out_1, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_1, batch_first=True,)
+        rnn_out_2, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_2,  batch_first=True)
+        # we don't use this?
+        # DECODER
+        # sum hidden activations of RNN across time
+         # DECODER
+        logits = self.linear(final_hidden)
+        output = self.linear2(logits)
         # so this should be a 1x num_classes vector that then needs to be soft-maxed. 
-        return logits
+        # output = self.softmax(logits)
+        return output
 
 
 def test_model(loader, model):
@@ -73,37 +110,4 @@ def test_model(loader, model):
         total += labels.size(0)
         correct += predicted.eq(labels.view_as(predicted)).sum().item()
     return (100 * correct / total)
-
-
-#model = RNN(emb_size=100, hidden_size=200, num_layers=2, num_classes=5, vocab_size=len(id2char))
-
-learning_rate = 3e-4
-num_epochs = 10 # number epoch to train
-
-# Criterion and Optimizer
-criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-# Train the model
-total_step = len(train_loader)
-train_loader = pickle.load(open( "trainloader", "rb"))
-for epoch in range(num_epochs):
-    for i, (sentence1, sentence2, length1, length2, order_1, order_2, labels) in enumerate(train_loader):
-        import pdb; pdb.set_trace()
-        # make sure that the order is the smae, 
-        model.train()
-        optimizer.zero_grad()
-        # Forward pass
-        outputs = model(data, lengths)
-        loss = criterion(outputs, labels)
-
-        # Backward and optimize
-        loss.backward()
-        optimizer.step()
-        # validate every 100 iterations
-        if i > 0 and i % 100 == 0:
-            # validate
-            val_acc = test_model(val_loader, model)
-            print('Epoch: [{}/{}], Step: [{}/{}], Validation Acc: {}'.format(
-                       epoch+1, num_epochs, i+1, len(train_loader), val_acc))
 
