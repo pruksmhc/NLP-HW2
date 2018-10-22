@@ -1,43 +1,65 @@
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pdb
+# now, we tokenize our current dataset
+import pickle
+import pdb 
 import numpy as np
+import pandas as pd
+import pprint
+import numpy as np
+from operator import itemgetter
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+import torch.nn.functional as F
+from sklearn.preprocessing import OneHotEncoder
 
-class CNN(nn.Module):
-    def __init__(self, emb_size, hidden_size, num_layers, num_classes, vocab_size):
+
+train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
+val_text_tokenized = pd.read_pickle("val_text_tokenized.pkl")
+train_text_tokenized_mnli= pd.read_pickle("MNLI_train_text_tokenized.pkl")
+val_text_tokenized_mnli = pd.read_pickle("MNLI_train_text_tokenized.pkl")
+snli_data = train_text_tokenized.append(val_text_tokenized)
+mnli_data =  train_text_tokenized_mnli.append(val_text_tokenized_mnli)
+MAX_SENTENCE_LENGTH_FIRST =max(snli_data["sentence1"].apply(lambda x: len(x)).tolist())
+MAX_SENTENCE_LENGTH_SECOND = max(snli_data["sentence2"].apply(lambda x: len(x)).tolist())
+all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
+VOCAB_NUM = len(all_tokens)
+
+class CNN(torch.nn.Module):
+    def __init__(self, emb_size, hidden_size, num_classes, kernel_size, vocab_size, weight):
 
         super(CNN, self).__init__()
 
-        self.num_layers, self.hidden_size = num_layers, hidden_size
-        self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=PAD_IDX)
+        self.hidden_size = hidden_size
+        self.embedding = torch.nn.Embedding.from_pretrained(weight)
     
-        self.conv1 = nn.Conv1d(emb_size, hidden_size, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)
-
-        self.linear1 = nn.Linear(hidden_size, num_classes*4)
-        self.linear2 =  nn.Linear(num_classes*4, num_classes)
+        self.conv1 = torch.nn.Conv1d(emb_size, hidden_size, kernel_size=kernel_size, padding=1)
+        self.conv2 = torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)
+        self.maxpool1 = torch.nn.MaxPool1d(50, stride=1)
+        self.maxpool2 = torch.nn.MaxPool1d(28, stride=1)
+        self.linear1 = torch.nn.Linear(2*hidden_size, 512)
+        self.linear2 =  torch.nn.Linear(512, num_classes)
 
     def forward(self, first_sentence_batch, second_sentence_batch, length1, length2, order_1, order_2):
         # for this do you also feed in and encode the representations separately?
         batch_size, seq_len1 = first_sentence_batch.size()
-        batch_size, seq_len2 = first_sentence_batch.size()
+        batch_size, seq_len2 = second_sentence_batch.size()
         embed1 = self.embedding(first_sentence_batch)
         embed2 =  self.embedding(second_sentence_batch)
 
-        embed1 = torch.nn.utils.rnn.pack_padded_sequence(embed1, length1.numpy(), batch_first=True)
-        embed2 = torch.nn.utils.rnn.pack_padded_sequence(embed2, length2.numpy(), batch_first=True)
         # embed dimension size torch.Size([BATCH SIZE, MAX_LEN, WORD_EMBED_SIZE])
         hidden1 = self.conv1(embed1.transpose(1,2)).transpose(1,2)
         # SAME 
         hidden1 = F.relu(hidden1.contiguous().view(-1, hidden1.size(-1))).view(batch_size, seq_len1, hidden1.size(-1))
         #SAME
         hidden1 = self.conv2(hidden1.transpose(1,2)).transpose(1,2)
-        #SAME
+        #SAMEc
+        # .view(batch_size, len(hidden1[]) hidden1.size(-1))
         hidden1 = F.relu(hidden1.contiguous().view(-1, hidden1.size(-1))).view(batch_size, seq_len1, hidden1.size(-1))
-        #SAME
+        # Doe sit do maxpooling1D over a batch as if it was doing it fofr each row independently. 
+        hidden1 = self.maxpool1(hidden1.transpose(1,2)).transpose(1,2) # we transpose the 2 dimensions
+        
+        hidden1 = F.relu(hidden1.contiguous().view(-1, hidden1.size(-1))).view(batch_size, hidden1.size(-1))
+
         hidden2 = self.conv1(embed2.transpose(1,2)).transpose(1,2)
         #SAME
         hidden2 = F.relu(hidden2.contiguous().view(-1, hidden2.size(-1))).view(batch_size, seq_len2, hidden2.size(-1))
@@ -45,15 +67,37 @@ class CNN(nn.Module):
         hidden2 = self.conv2(hidden2.transpose(1,2)).transpose(1,2)
         hidden2 = F.relu(hidden2.contiguous().view(-1, hidden2.size(-1))).view(batch_size, seq_len2, hidden2.size(-1))
 
-        hidden_concat_first = torch.cat((self.hidden_1[0], self.hidden_1[1]), dim=1)
-        hidden_concat_sec = torch.cat((self.hidden_2[0], self.hidden_2[1]), dim=1)
+        hidden2 = self.maxpool2(hidden2.transpose(1,2)).transpose(1,2)
+        hidden2 = F.relu(hidden2.contiguous().view(-1, hidden2.size(-1))).view(batch_size, hidden2.size(-1))
 
-
-        hidden = torch.sum(hidden, dim=1)
-        logits = self.linear(hidden)
+        # order and concat
+        hidden_concat_first = torch.index_select(hidden1, 0, order_1)
+        hidden_concat_sec = torch.index_select(hidden2, 0, order_2)
+        final_hidden = torch.cat((hidden_concat_first, hidden_concat_sec), dim=1)
+        # DECODE
+        logits = self.linear1(final_hidden)
+        logits = F.leaky_relu(logits)
+        logits = self.linear2(logits)
         return logits
 
 
+
+
+def test_model(loader, model):
+    """
+    Help function that tests the model's performance on a dataset
+    @param: loader - data loader for the dataset to test against
+    """
+    correct = 0
+    total = 0
+    model.eval()
+    for sentence1, sentence2, length1, length2, order_1, order_2, labels in loader:
+        outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
+        outputs = F.softmax(outputs, dim=1)
+        predicted = outputs.max(1, keepdim=True)[1]
+        total += labels.size(0)
+        correct += predicted.eq(labels.view_as(predicted)).sum().item()
+    return (100 * correct / total)
 
 
 

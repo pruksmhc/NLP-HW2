@@ -21,9 +21,12 @@ class RNN(nn.Module):
         #self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
         self.gru = nn.GRU(emb_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
         # the input vector is size emb_size
-        self.linear = nn.Linear(4*hidden_size, num_classes*30)
-        self.linear2 = nn.Linear( num_classes*30, num_classes)
-        self.softmax = nn.Softmax(dim=1)
+        # I found this from Fcaebook AI's implementation, where they used an intermediate layer size of 512
+        # nodes. 
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_size*4, 512),
+            nn.Linear(512, num_classes),
+        )
 
     def init_hidden(self, batch_size):
         # Function initializes the activation of recurrent neural net at timestep 0
@@ -31,21 +34,6 @@ class RNN(nn.Module):
         hidden = torch.randn(2, batch_size, self.hidden_size)
 
         return hidden
-    def reorder(self, arr,index):
-        # Used GeekForGeeks' solution: https://www.geeksforgeeks.org/reorder-a-array-according-to-given-indexes/
-        n = len(index)
-        temp = [0] * n; 
-      
-        # arr[i] should be 
-            # present at index[i] index 
-        for i in range(0,n): 
-            temp[index[i]] = arr[i] 
-      
-        # Copy temp[] to arr[] 
-        for i in range(0,n): 
-            arr[i] = temp[i] 
-            index[i] = i 
-        return arr
 
     def forward(self, first_sentence_batch, second_sentence_batch, length1, length2, order_1, order_2):
         # reset hidden state
@@ -63,35 +51,26 @@ class RNN(nn.Module):
         embed1 = torch.nn.utils.rnn.pack_padded_sequence(embed1, length1.numpy(), batch_first=True)
         embed2 = torch.nn.utils.rnn.pack_padded_sequence(embed2, length2.numpy(), batch_first=True)
         # fprop though RNN
-        rnn_out_1, self.hidden_1 = self.gru(embed1, self.hidden)
-        rnn_out_2, self.hidden_2 = self.gru(embed2, self.hidden)
+        _, self.hidden_1 = self.gru(embed1, self.hidden)
+        _, self.hidden_2 = self.gru(embed2, self.hidden)
         # concat the first column 
         hidden_concat_first = torch.cat((self.hidden_1[0], self.hidden_1[1]), dim=1)
         hidden_concat_sec = torch.cat((self.hidden_2[0], self.hidden_2[1]), dim=1)
 
         # now, we rearrange to get the correct ordering
-        hcf = hidden_concat_first.clone().detach().numpy().tolist()
-        hcs = hidden_concat_sec.clone().detach().numpy().tolist()
-
-        # assert that they're indeed the same (shuffled correctly)
-        #assert hcf[order_1[i]] == hidden_concat_first[i] for i in range(len(hidden_concat_first))
-        hidden_concat_first = torch.FloatTensor(self.reorder(hcf, order_1.numpy().tolist()))
-        hidden_concat_sec =  torch.FloatTensor(self.reorder(hcs, order_2.numpy().tolist()))
-        
+        hidden_concat_first = torch.index_select(hidden_concat_first, 0, order_1)
+        hidden_concat_sec2 = torch.index_select(hidden_concat_sec, 0, order_2)
         final_hidden = torch.cat((hidden_concat_first, hidden_concat_sec), dim=1)
         # revrese is in the first dimension
         # undo packing, this basically inserts back the zeroes
-        rnn_out_1, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_1, batch_first=True,)
-        rnn_out_2, _ = torch.nn.utils.rnn.pad_packed_sequence(rnn_out_2,  batch_first=True)
         # we don't use this?
         # DECODER
         # sum hidden activations of RNN across time
          # DECODER
-        logits = self.linear(final_hidden)
-        output = self.linear2(logits)
+        logits = self.decoder(final_hidden)
         # so this should be a 1x num_classes vector that then needs to be soft-maxed. 
         # output = self.softmax(logits)
-        return output
+        return logits
 
 
 def test_model(loader, model):
@@ -102,11 +81,10 @@ def test_model(loader, model):
     correct = 0
     total = 0
     model.eval()
-    for data, lengths, labels in loader:
-        data_batch, lengths_batch, label_batch = data, lengths, labels
-        outputs = F.softmax(model(data_batch, lengths_batch), dim=1)
+    for sentence1, sentence2, length1, length2, order_1, order_2, labels in loader:
+        outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
+        outputs = F.softmax(outputs, dim=1)
         predicted = outputs.max(1, keepdim=True)[1]
-
         total += labels.size(0)
         correct += predicted.eq(labels.view_as(predicted)).sum().item()
     return (100 * correct / total)
