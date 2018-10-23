@@ -60,13 +60,8 @@ class RNN(nn.Module):
 
         # now, we rearrange to get the correct ordering
         hidden_concat_first = torch.index_select(hidden_concat_first, 0, order_1)
-        hidden_concat_sec2 = torch.index_select(hidden_concat_sec, 0, order_2)
+        hidden_concat_sec = torch.index_select(hidden_concat_sec, 0, order_2)
         final_hidden = torch.cat((hidden_concat_first, hidden_concat_sec), dim=1)
-        # revrese is in the first dimension
-        # undo packing, this basically inserts back the zeroes
-        # we don't use this?
-        # DECODER
-        # sum hidden activations of RNN across time
          # DECODER
         logits = self.decoder(final_hidden)
         # so this should be a 1x num_classes vector that then needs to be soft-maxed. 
@@ -86,6 +81,8 @@ def test_model(loader, model):
         outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
         outputs = F.softmax(outputs, dim=1)
         predicted = outputs.max(1, keepdim=True)[1]
+        print("Predictions at this step is")
+        print(predicted)
         total += labels.size(0)
         correct += predicted.eq(labels.view_as(predicted)).sum().item()
     return (100 * correct / total)

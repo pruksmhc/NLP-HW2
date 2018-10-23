@@ -13,17 +13,6 @@ import torch.nn.functional as F
 from sklearn.preprocessing import OneHotEncoder
 
 
-train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
-val_text_tokenized = pd.read_pickle("val_text_tokenized.pkl")
-train_text_tokenized_mnli= pd.read_pickle("MNLI_train_text_tokenized.pkl")
-val_text_tokenized_mnli = pd.read_pickle("MNLI_train_text_tokenized.pkl")
-snli_data = train_text_tokenized.append(val_text_tokenized)
-mnli_data =  train_text_tokenized_mnli.append(val_text_tokenized_mnli)
-MAX_SENTENCE_LENGTH_FIRST =max(snli_data["sentence1"].apply(lambda x: len(x)).tolist())
-MAX_SENTENCE_LENGTH_SECOND = max(snli_data["sentence2"].apply(lambda x: len(x)).tolist())
-all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
-VOCAB_NUM = len(all_tokens)
-
 class CNN(torch.nn.Module):
     def __init__(self, emb_size, hidden_size, num_classes, kernel_size, vocab_size, weight):
 

@@ -43,6 +43,17 @@ class NewsGroupDataset(Dataset):
 	    label = self.target_list[key]
 	    return [sentences,lengths, label]
 
+def get_order(sorted_list, to_construct):
+    order = []
+    for elt in to_construct:
+        index = []
+        for i in range(len(sorted_list)):
+            s_elt = sorted_list[i]
+            if s_elt == elt:
+                index = i
+        order.append(index)
+    return order
+
 def entailment_collate_func_concat(batch):
     """
     Customized function for DataLoader that dynamically pads the batch so that all 
@@ -65,7 +76,11 @@ def entailment_collate_func_concat(batch):
     	length_list_second.append(datum[1][1])
     	label_list.append(datum[2])
     sorted_first = sorted(first_data_list, key=lambda e: len(e), reverse=True)
+    # this is the sorted data list. 
     sorted_second = sorted(second_data_list, key=lambda e: len(e), reverse=True)
+    order_one_to_pass =  get_order(sorted_first, first_data_list)
+    order_two_to_pass =  get_order(sorted_second, second_data_list)
+
     order_one = sorted(range(len(length_list_first)), key=lambda k: len(first_data_list[k]), reverse=True)
     order_two = sorted(range(len(length_list_second)), key=lambda k: len(second_data_list[k]), reverse=True)
     length_first =  sorted(length_list_first, reverse=True)
@@ -75,10 +90,17 @@ def entailment_collate_func_concat(batch):
     #pdb.set_trace()
     for i in range(len(sorted_first)):
    		elt = sorted_first[i]
-   		assert len(elt) == len(first_data_list[order_one[i]])
+   		assert (np.array(elt)!=0).sum() == (np.array(first_data_list[order_one[i]])!=0).sum()
    		elt = sorted_second[i]
-   		assert len(elt) == len(second_data_list[order_two[i]])
+   		assert (np.array(elt)!=0).sum() == (np.array(second_data_list[order_two[i]])!=0).sum()
     # padding
+
+    for i in range(len(length_list_first)):
+        elt = first_data_list[i]
+        assert (np.array(elt)!=0).sum() == (np.array(sorted_first[order_one_to_pass[i]])!=0).sum()
+        elt = second_data_list[i]
+        assert (np.array(elt)!=0).sum() == (np.array(sorted_second[order_two_to_pass[i]])!=0).sum()
+
     for i in range(len(batch)):
     	# Do e first do this and then this? 
     	first_sentence = sorted_first[i]
@@ -87,7 +109,7 @@ def entailment_collate_func_concat(batch):
     	second_sentence.extend([0]*(MAX_SENTENCE_LENGTH_SECOND-len(second_sentence)))
     	data_list_first.append(first_sentence)
     	data_list_second.append(second_sentence)
-    return [torch.LongTensor(data_list_first), torch.LongTensor(data_list_second), torch.LongTensor(length_first),  torch.LongTensor(length_second), torch.LongTensor( order_one), torch.LongTensor( order_two), torch.LongTensor(label_list)]
+    return [torch.LongTensor(data_list_first), torch.LongTensor(data_list_second), torch.LongTensor(length_first),  torch.LongTensor(length_second), torch.LongTensor( order_one_to_pass), torch.LongTensor( order_two_to_pass), torch.LongTensor(label_list)]
 
 
  # load word embeddings from GloVe 
@@ -208,8 +230,7 @@ current_word2idx = pickle.load(open("word2idxfasttext50K", "rb"))
 current_matrix = pickle.load(open("idx2vectorfasttext50K", "rb"))
 weights = pickle.load(open("weights.pkl", "rb"))
 train_text_tokenized = pd.read_pickle("train_token_indexed.pkl")
-train_text_tokenized = train_text_tokenized[:1000]
-
+train_text_tokenized = train_text_tokenized[:2000]
 val_text_tokenized = pd.read_pickle("val_token_indexed.pkl")
 
 BATCH_SIZE = 32
@@ -236,8 +257,8 @@ NOW THE TRAINING
 
 weights = pickle.load(open("weights.pkl", "rb"))
 model = RNN(emb_size=300, hidden_size=600, num_layers=1, num_classes=3,  weight=torch.FloatTensor(weights))
-learning_rate = 0.05
-num_epochs = 10 # number epoch to train
+learning_rate = 0.001
+num_epochs = 100 # number epoch to train
 
 # Criterion and Optimizer
 criterion = torch.nn.CrossEntropyLoss()
@@ -246,15 +267,17 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 # Train the model
 total_step = len(train_loader)
 for epoch in range(num_epochs):
+    before = []
+    after = list(model.parameters())
     for i, (sentence1, sentence2, length1, length2, order_1, order_2, labels) in enumerate(train_loader):
-        print(i)
         # make sure that the order is the smae, 
         model.train()
         optimizer.zero_grad()
         # Forward pass
         outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
+        #print("Predictions at this step is")
         loss = criterion(outputs, labels)
-        print("loss is"+ str(loss))
+        print("loss is"+ str(loss.item()))
         # Backward and optimize
         loss.backward()
         optimizer.step()
@@ -263,7 +286,7 @@ for epoch in range(num_epochs):
         total_norm = 0
 
         # validate every 100 iterations
-        if i > 0 and i % 100 == 0:
+        if i > 0 and i % 30 == 0:
             for p in parameters:
                 param_norm = p.grad.data.norm(norm_type)
                 total_norm += param_norm.item() ** norm_type
