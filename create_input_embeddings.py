@@ -13,14 +13,9 @@ from sklearn.preprocessing import OneHotEncoder
 from RNN_Class import *
 
 
-train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
-val_text_tokenized = pd.read_pickle("val_text_tokenized.pkl")
-train_text_tokenized_mnli= pd.read_pickle("MNLI_train_text_tokenized.pkl")
-val_text_tokenized_mnli = pd.read_pickle("MNLI_train_text_tokenized.pkl")
-snli_data = train_text_tokenized
-MAX_SENTENCE_LENGTH_FIRST =max(snli_data["sentence1"].apply(lambda x: len(x)).tolist())
-MAX_SENTENCE_LENGTH_SECOND = max(snli_data["sentence2"].apply(lambda x: len(x)).tolist())
-all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
+MAX_SENTENCE_LENGTH_FIRST = 50 
+MAX_SENTENCE_LENGTH_SECOND = 28 
+
 # what's the vocab size? 
 class NewsGroupDataset(Dataset):
     """
@@ -129,21 +124,21 @@ def load_fasttext():
     return idx2words_ft, words_ft, loaded_embeddings_ft
 
 def tokenize_all_vectors(tokens, glove_vocab, loaded_embeddings):
-	current_word2idx = {}
-	current_matrix = {}
-	current_matrix[1] = unknown_vector # this is the unknown. 
-	current_matrix[0]  = [0]* EMBED_DIM # this is just the padding
-	for i in range(len(tokens)):
-		token = tokens[i].lower()
-		index_vocab = np.nonzero(glove_vocab == token)
-		if index_vocab[0].shape[0] > 0:
-			current_matrix[i+2] = loaded_embeddings[index_vocab[0]]	
-			if len(current_matrix[i+2]) == 1:
-				current_matrix[i+2] = current_matrix[i+2][0]
-				current_word2idx[token] = i+2
-		else:
-			current_word2idx[token] = 1 # it's not in the vocabulary, so map to 1. 
-	return current_matrix, current_word2idx
+    current_word2idx = {}
+    current_matrix = {}
+    current_matrix[1] = unknown_vector
+    current_matrix[0]  = [0]* EMBED_DIM # this is just the padding
+    for i in range(len(tokens)):
+        token = tokens[i].lower()
+        index_vocab = np.nonzero(glove_vocab == token)
+        if index_vocab[0].shape[0] > 0:
+            current_matrix[i+2] = loaded_embeddings[index_vocab[0]]	
+            if len(current_matrix[i+2]) == 1:
+                current_matrix[i+2] = current_matrix[i+2][0]
+            current_word2idx[token] = i+2
+        else:
+            current_word2idx[token] = 1 # it's not in the vocabulary, so map to 1. 
+    return current_matrix, current_word2idx
 
 def tokenize_labels(data):
 	labels = {"neutral":0, "contradiction": 1, "entailment": 2}
@@ -157,38 +152,41 @@ def tokenize_on_glove_vectors(text, current_word2idx, vocab_size):
         if word in list(current_word2idx.keys()):
             result.append(current_word2idx[word])
         else:
+            #pdb.set_trace()
             result.append(1) # this is the unknown vector
     return result
 
 # get all tokens
 """
-all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
+all_tokens = pickle.load(open("train_tokens.pkl", "rb")) # tHIS IS ONLY FOR GLOVE. 
 idx2words, words, loaded_embeddings = load_fasttext()
 EMBED_DIM = 300
 unknown_vector = np.random.normal(scale=0.6, size=(EMBED_DIM, ))
 words["UNK"] = unknown_vector
 glove_vocab = np.array(list(words.keys()))
 idx2words[len(glove_vocab) - 1] = "UNK"
-current_matrix, current_word2idx = tokenize_all_vectors(list(all_tokens), glove_vocab, loaded_embeddings)
+current_matrix, current_word2idx = tokenize_all_vectors(list(all_tokens),  glove_vocab, loaded_embeddings)
 pickle.dump(current_word2idx, open("word2idxfasttext50K", "wb"))
 pickle.dump(current_matrix, open("idx2vectorfasttext50K", "wb"))
-all_tokens = pickle.load(open("train_tokens.pkl", "rb"))
 """
-
 current_word2idx = pickle.load(open("word2idxfasttext50K", "rb"))
 #train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
 current_matrix = pickle.load(open("idx2vectorfasttext50K", "rb"))
 
 vocab_size = len(current_word2idx) # this is the vocab size
-#train_text_tokenized = train_text_tokenized # just do a batch of 20 for testing. 
 #train_text_tokenized["sentence1"] = train_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
 #train_text_tokenized["sentence2"] = train_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
+#pickle.dump(train_text_tokenized, open("train_token_indexed.pkl", "wb"))
+
+#val_text_tokenized["sentence1"] = val_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
+#val_text_tokenized["sentence2"] = val_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
+#pickle.dump(val_text_tokenized, open("val_token_indexed.pkl", "wb"))
 # sort the sentneces based on the length of the two sentences combined. 
 #pickle.dump(train_text_tokenized, open("train_token_indexedFULL.pkl", "wb"))
-pdb.set_trace()
 # we need to sort by decreasing order first. 
 train_text_tokenized = pd.read_pickle("train_token_indexed.pkl")
 val_text_tokenized = pd.read_pickle("val_token_indexed.pkl")
+
 BATCH_SIZE = 32
 
 train_dataset = NewsGroupDataset(train_text_tokenized["sentence1"].values.tolist(), train_text_tokenized["sentence2"].values.tolist(), train_text_tokenized["label"].values.tolist())
@@ -226,8 +224,9 @@ for i in range(max_index+1):
 	else:
 		weights.append(current_matrix[1]) # else, there's no glove vector (it shouldn't access anyways due to 
 		# how we tokenized the vectors and built current_matrix at the same time. )
+pickle.dump(weights, "weights.pkl")
 model = RNN(emb_size=300, hidden_size=600, num_layers=1, num_classes=3, vocab_size=len(current_word2idx), weight=torch.FloatTensor(weights))
-learning_rate = 0.1
+learning_rate = 0.05
 num_epochs = 10 # number epoch to train
 
 # Criterion and Optimizer
@@ -249,11 +248,19 @@ for epoch in range(num_epochs):
         # Backward and optimize
         loss.backward()
         optimizer.step()
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                print(name, param.data)
+        parameters = list(filter(lambda p: p.grad is not None, model.parameters()))
+        norm_type = 2
+        total_norm = 0
+
         # validate every 100 iterations
         if i > 0 and i % 100 == 0:
+            for p in parameters:
+                param_norm = p.grad.data.norm(norm_type)
+                total_norm += param_norm.item() ** norm_type
+            train_acc = test_model(train_loader, model)
+            print("train_Acc" + str(train_acc))
+            total_norm = total_norm ** (1. / norm_type)
+            print(total_norm)
             # validate
             val_acc = test_model(val_loader, model)
             print('Epoch: [{}/{}], Step: [{}/{}], Validation Acc: {}'.format(
