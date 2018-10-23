@@ -7,7 +7,7 @@ import pdb
 import numpy as np 
 
 class RNN(nn.Module):
-    def __init__(self, emb_size, hidden_size, num_layers, num_classes, vocab_size, weight):
+    def __init__(self, emb_size, hidden_size, num_layers, num_classes, weight):
         # RNN Accepts the following hyperparams:
         # emb_size: Embedding Size
         # hidden_size: Hidden Size of layer in RNN
@@ -25,6 +25,7 @@ class RNN(nn.Module):
         # nodes. 
         self.decoder = nn.Sequential(
             nn.Linear(hidden_size*4, 512),
+            nn.ReLU(),
             nn.Linear(512, num_classes),
         )
 

@@ -15,7 +15,7 @@ from RNN_Class import *
 
 MAX_SENTENCE_LENGTH_FIRST = 50 
 MAX_SENTENCE_LENGTH_SECOND = 28 
-
+EMBED_DIM = 300
 # what's the vocab size? 
 class NewsGroupDataset(Dataset):
     """
@@ -123,21 +123,25 @@ def load_fasttext():
             idx2words_ft[i] = s[0]
     return idx2words_ft, words_ft, loaded_embeddings_ft
 
-def tokenize_all_vectors(tokens, glove_vocab, loaded_embeddings):
+def tokenize_all_vectors(tokens, words, loaded_embeddings, unknown_vector):
     current_word2idx = {}
     current_matrix = {}
     current_matrix[1] = unknown_vector
     current_matrix[0]  = [0]* EMBED_DIM # this is just the padding
+    keys = np.array(list(words.keys()))
     for i in range(len(tokens)):
         token = tokens[i].lower()
-        index_vocab = np.nonzero(glove_vocab == token)
-        if index_vocab[0].shape[0] > 0:
-            current_matrix[i+2] = loaded_embeddings[index_vocab[0]]	
+        if token in keys:
+            current_matrix[i+2] = loaded_embeddings[words[token]]
+            current_word2idx[token] = i+2
             if len(current_matrix[i+2]) == 1:
                 current_matrix[i+2] = current_matrix[i+2][0]
-            current_word2idx[token] = i+2
         else:
             current_word2idx[token] = 1 # it's not in the vocabulary, so map to 1. 
+    # make sure that the number of rows of current matrix is one more than the cardinality of set of all unique 
+    # indices in current_word2idx (since 0 shuold not appera in the current word2idx)
+    unique_embeds = set(tuple(row) for row in current_matrix.values())
+    assert len(unique_embeds) == (len(set(current_word2idx.values())) + 1)
     return current_matrix, current_word2idx
 
 def tokenize_labels(data):
@@ -145,8 +149,9 @@ def tokenize_labels(data):
 	data["label"] = data["label"].apply(lambda i: labels[i])
 	return data
 
-def tokenize_on_glove_vectors(text, current_word2idx, vocab_size):
+def tokenize_on_glove_vectors(text, current_word2idxe):
     result = []
+    # OH MY GOD I FOUND IT. THERE IS INDEED A BUG IN HERE. 
     for word in text:
         word = word.lower()
         if word in list(current_word2idx.keys()):
@@ -156,35 +161,55 @@ def tokenize_on_glove_vectors(text, current_word2idx, vocab_size):
             result.append(1) # this is the unknown vector
     return result
 
-# get all tokens
-"""
-all_tokens = pickle.load(open("train_tokens.pkl", "rb")) # tHIS IS ONLY FOR GLOVE. 
-idx2words, words, loaded_embeddings = load_fasttext()
-EMBED_DIM = 300
-unknown_vector = np.random.normal(scale=0.6, size=(EMBED_DIM, ))
-words["UNK"] = unknown_vector
-glove_vocab = np.array(list(words.keys()))
-idx2words[len(glove_vocab) - 1] = "UNK"
-current_matrix, current_word2idx = tokenize_all_vectors(list(all_tokens),  glove_vocab, loaded_embeddings)
-pickle.dump(current_word2idx, open("word2idxfasttext50K", "wb"))
-pickle.dump(current_matrix, open("idx2vectorfasttext50K", "wb"))
-"""
+
+def generate_indexed_val(current_word2idx):
+    val_text_tokenized = pd.read_pickle("val_text_tokenized.pkl")
+    val_text_tokenized["sentence1"] = val_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx))
+    val_text_tokenized["sentence2"] = val_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx))
+    val_text_tokenized = tokenize_labels(val_text_tokenized)
+    pickle.dump(val_text_tokenized, open("val_token_indexed.pkl", "wb"))
+
+def generate_indexed_train(current_word2idx):
+    hey = pd.read_csv("hw2_data/snli_train.tsv", sep="\t")
+    train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
+    train_text_tokenized["sentence2"] = train_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx))
+    train_text_tokenized["sentence1"] = train_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx))
+    pickle.dump(train_text_tokenized, open("train_token_indexed.pkl", "wb"))
+
+def generate_weights(column_keys, max_index):
+    """
+    column_keys = list(current_matrix.keys()) # curernt marix
+    max_index = max(column_keys) # this goes up to a 1. 
+    """
+    weights = []
+    for i in range(max_index+1):
+        if i in column_keys:
+            weights.append(current_matrix[i])
+        else:
+            weights.append(current_matrix[1])
+    pickle.dump(weights, open("weights.pkl", "wb"))
+
+def generate_initial_id2wordv():
+    all_tokens = pickle.load(open("train_tokens.pkl", "rb")) # tHIS IS ONLY FOR GLOVE. 
+    idx2words, words, loaded_embeddings = load_fasttext()
+    unknown_vector = list(np.random.normal(scale=0.6, size=(EMBED_DIM, )))
+    words["UNK"] = unknown_vector
+    glove_vocab = np.array(list(words.keys()))
+    idx2words[len(glove_vocab) - 1] = "UNK"
+    # check the all_tokens is working. 
+    current_matrix, current_word2idx = tokenize_all_vectors(list(all_tokens), words, loaded_embeddings, unknown_vector)
+    pickle.dump(current_word2idx, open("word2idxfasttext50K", "wb"))
+    pickle.dump(current_matrix, open("idx2vectorfasttext50K", "wb"))
+
+
+
 current_word2idx = pickle.load(open("word2idxfasttext50K", "rb"))
 #train_text_tokenized = pd.read_pickle("train_text_tokenized.pkl")
 current_matrix = pickle.load(open("idx2vectorfasttext50K", "rb"))
-
-vocab_size = len(current_word2idx) # this is the vocab size
-#train_text_tokenized["sentence1"] = train_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
-#train_text_tokenized["sentence2"] = train_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
-#pickle.dump(train_text_tokenized, open("train_token_indexed.pkl", "wb"))
-
-#val_text_tokenized["sentence1"] = val_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
-#val_text_tokenized["sentence2"] = val_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
-#pickle.dump(val_text_tokenized, open("val_token_indexed.pkl", "wb"))
-# sort the sentneces based on the length of the two sentences combined. 
-#pickle.dump(train_text_tokenized, open("train_token_indexedFULL.pkl", "wb"))
-# we need to sort by decreasing order first. 
+weights = pickle.load(open("weights.pkl", "rb"))
 train_text_tokenized = pd.read_pickle("train_token_indexed.pkl")
+train_text_tokenized = train_text_tokenized[:1000]
+
 val_text_tokenized = pd.read_pickle("val_token_indexed.pkl")
 
 BATCH_SIZE = 32
@@ -196,11 +221,6 @@ train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                            batch_size=BATCH_SIZE,
                                            collate_fn=entailment_collate_func_concat,
                                            shuffle=True)
-#val_text_tokenized = val_text_tokenized.iloc[:2000] 
-
-#val_text_tokenized["sentence1"] = val_text_tokenized["sentence1"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
-
-#val_text_tokenized["sentence2"] = val_text_tokenized["sentence2"].apply(lambda x: tokenize_on_glove_vectors(x, current_word2idx, vocab_size))
 
 val_dataset = NewsGroupDataset(val_text_tokenized["sentence1"].values.tolist(), val_text_tokenized["sentence2"].values.tolist(), val_text_tokenized["label"].values.tolist())
 
@@ -208,24 +228,14 @@ val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
                                            batch_size=BATCH_SIZE,
                                            collate_fn=entailment_collate_func_concat,
                                            shuffle=True)
-# sort the sentneces based on the length of the two sentences combined. 
 
 
 """
 NOW THE TRAINING 
 """
-column_keys = list(current_matrix.keys())
-max_index = max(column_keys)
-weights = []
-for i in range(max_index+1):
-	if i in column_keys:
-		# if index is in the curent matrix, thus it's an index thatw will be accessed
-		weights.append(current_matrix[i])
-	else:
-		weights.append(current_matrix[1]) # else, there's no glove vector (it shouldn't access anyways due to 
-		# how we tokenized the vectors and built current_matrix at the same time. )
-pickle.dump(weights, "weights.pkl")
-model = RNN(emb_size=300, hidden_size=600, num_layers=1, num_classes=3, vocab_size=len(current_word2idx), weight=torch.FloatTensor(weights))
+
+weights = pickle.load(open("weights.pkl", "rb"))
+model = RNN(emb_size=300, hidden_size=600, num_layers=1, num_classes=3,  weight=torch.FloatTensor(weights))
 learning_rate = 0.05
 num_epochs = 10 # number epoch to train
 
