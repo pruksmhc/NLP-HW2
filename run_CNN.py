@@ -230,7 +230,6 @@ current_word2idx = pickle.load(open("word2idxfasttext50K", "rb"))
 current_matrix = pickle.load(open("idx2vectorfasttext50K", "rb"))
 weights = pickle.load(open("weights.pkl", "rb"))
 train_text_tokenized = pd.read_pickle("train_token_indexed.pkl")
-train_text_tokenized = train_text_tokenized[:2000]
 val_text_tokenized = pd.read_pickle("val_token_indexed.pkl")
 
 BATCH_SIZE = 32
@@ -277,7 +276,7 @@ for epoch in range(num_epochs):
         outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
         #print("Predictions at this step is")
         loss = criterion(outputs, labels)
-        print("loss is"+ str(loss.item()))
+        #print("loss is"+ str(loss.item()))
         # Backward and optimize
         loss.backward()
         optimizer.step()
@@ -286,18 +285,19 @@ for epoch in range(num_epochs):
         total_norm = 0
 
         # validate every 100 iterations
-        if i > 0 and i % 30 == 0:
-            for p in parameters:
-                param_norm = p.grad.data.norm(norm_type)
-                total_norm += param_norm.item() ** norm_type
-            train_acc = test_model(train_loader, model)
-            print("train_Acc" + str(train_acc))
-            total_norm = total_norm ** (1. / norm_type)
-            print(total_norm)
+        if i > 0 and i % 100 == 0:
             # validate
+            s_outputs = F.softmax(outputs, dim=1)
+            total = labels.size(0)
+            predicted = s_outputs.max(1, keepdim=True)[1]
+            correct = predicted.eq(labels.view_as(predicted)).sum().item()
+            train_acc = (100 * correct / total)
+            print("Train accuracy is" + str(train_acc))
+
             val_acc = test_model(val_loader, model)
             print('Epoch: [{}/{}], Step: [{}/{}], Validation Acc: {}'.format(
                        epoch+1, num_epochs, i+1, total_step, val_acc))
+
 
 # they hsouldall be of the right siz.e 
 # then you have the data_loader. 
