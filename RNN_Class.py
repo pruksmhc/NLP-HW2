@@ -81,8 +81,6 @@ def test_model(loader, model):
         outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
         outputs = F.softmax(outputs, dim=1)
         predicted = outputs.max(1, keepdim=True)[1]
-        print("Predictions at this step is")
-        print(predicted)
         total += labels.size(0)
         correct += predicted.eq(labels.view_as(predicted)).sum().item()
     return (100 * correct / total)

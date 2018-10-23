@@ -14,17 +14,16 @@ from sklearn.preprocessing import OneHotEncoder
 
 
 class CNN(torch.nn.Module):
-    def __init__(self, emb_size, hidden_size, num_classes, kernel_size, vocab_size, weight):
+    def __init__(self, emb_size, hidden_size, num_classes, kernel_size, weight, maxlength1, maxlength2):
 
         super(CNN, self).__init__()
 
         self.hidden_size = hidden_size
         self.embedding = torch.nn.Embedding.from_pretrained(weight)
-    
         self.conv1 = torch.nn.Conv1d(emb_size, hidden_size, kernel_size=kernel_size, padding=1)
-        self.conv2 = torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)
-        self.maxpool1 = torch.nn.MaxPool1d(50, stride=1)
-        self.maxpool2 = torch.nn.MaxPool1d(28, stride=1)
+        self.conv2 = torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=kernel_size, padding=1)
+        self.maxpool1 = torch.nn.MaxPool1d(maxlength1, stride=1)
+        self.maxpool2 = torch.nn.MaxPool1d(maxlength2, stride=1)
         self.linear1 = torch.nn.Linear(2*hidden_size, 512)
         self.linear2 =  torch.nn.Linear(512, num_classes)
 
@@ -68,26 +67,4 @@ class CNN(torch.nn.Module):
         logits = F.leaky_relu(logits)
         logits = self.linear2(logits)
         return logits
-
-
-
-
-def test_model(loader, model):
-    """
-    Help function that tests the model's performance on a dataset
-    @param: loader - data loader for the dataset to test against
-    """
-    correct = 0
-    total = 0
-    model.eval()
-    for sentence1, sentence2, length1, length2, order_1, order_2, labels in loader:
-        outputs = model(sentence1, sentence2, length1, length2, order_1, order_2)
-        outputs = F.softmax(outputs, dim=1)
-        predicted = outputs.max(1, keepdim=True)[1]
-        total += labels.size(0)
-        correct += predicted.eq(labels.view_as(predicted)).sum().item()
-    return (100 * correct / total)
-
-
-
 

@@ -265,8 +265,6 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 # Train the model
 total_step = len(train_loader)
 for epoch in range(num_epochs):
-    before = []
-    after = list(model.parameters())
     for i, (sentence1, sentence2, length1, length2, order_1, order_2, labels) in enumerate(train_loader):
         # make sure that the order is the smae, 
         model.train()

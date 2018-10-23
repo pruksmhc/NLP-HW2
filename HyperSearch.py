@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 import numpy as np 
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from RNN_Class import *
 from CNNModel import *
@@ -44,7 +46,7 @@ class HyperSearch(nn.Module):
 		pickle.dump(train_accs, open(link + "train_accuracies", "wb"))
 		pickle.dump(max_val, open("maxvalaccis"+str(max_val), "wb"))
 		# this is when you want to overlay
-		num_in_epoch = np.shape(train_accs)[1]
+		num_in_epoch = np.shape(train_accs)[0]
 		x_vals = np.arange(0, 10, 1.0/float(num_in_epoch))
 		fig = plt.figure()
 		plt.title(title)
@@ -57,7 +59,6 @@ class HyperSearch(nn.Module):
 		plt.xlim(0, 10)
 		plt.yticks([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
 		plt.xticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-		pdb.set_trace()
 		fig.savefig(link+"graph.png")
 		# What if I actually do the graphing here, then it would output the graphs here. 
 
@@ -71,13 +72,10 @@ class HyperSearch(nn.Module):
 
 		"""
 		criterion = torch.nn.CrossEntropyLoss()
-
 		total_step = len(train_loader)
-		pdb.set_trace()
 		for param_val in param_values:
 			val_accs = []
 			train_accs = []
-			pdb.set_trace()
 			other_values[param_name] = param_val
 			if CNN_or_RNN == "CNN":
 				#model = CNN(emb_size=300, hidden_size=600,  num_classes=3, vocab_size=len(current_word2idx), kernel_size =3, weight=torch.FloatTensor(weights), 50, 28)
@@ -102,6 +100,8 @@ class HyperSearch(nn.Module):
 					# we should have 10 in between. so 10 per epoch. 
 					if i > 0 and i % 100 == 0:
 						# there should be 2 per epoch
+						print("Parameter "+param_name)
+						print(param_val)
 						s_outputs = F.softmax(outputs, dim=1)
 						total = labels.size(0)
 						predicted = s_outputs.max(1, keepdim=True)[1]
@@ -115,7 +115,6 @@ class HyperSearch(nn.Module):
 						v_accs.append(val_acc)
 				val_accs.append(v_accs)
 				train_accs.append(t_accs)
-			pdb.set_trace()
 			title = template_title + str(param_val)
-			self.save_model(model, val_accs, train_accs, CNN_or_RNN, param_nam, param_val, title)
+			self.save_model(model, val_accs, train_accs, CNN_or_RNN, param_name, param_val, title)
 

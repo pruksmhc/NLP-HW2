@@ -255,7 +255,7 @@ NOW THE TRAINING
 """
 
 weights = pickle.load(open("weights.pkl", "rb"))
-model = CNN(emb_size=300, hidden_size=600,  num_classes=3, vocab_size=len(current_word2idx), kernel_size =3, weight=torch.FloatTensor(weights))
+model = CNN(emb_size=300, hidden_size=600,  num_classes=3, vocab_size=len(current_word2idx), kernel_size =3, weight=torch.FloatTensor(weights), 50, 28)
 learning_rate = 0.001
 num_epochs = 100 # number epoch to train
 # Criterion and Optimizer
