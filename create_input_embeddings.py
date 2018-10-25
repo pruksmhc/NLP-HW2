@@ -261,7 +261,6 @@ num_epochs = 100 # number epoch to train
 # Criterion and Optimizer
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
 # Train the model
 total_step = len(train_loader)
 for epoch in range(num_epochs):
