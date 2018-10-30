@@ -34,6 +34,10 @@ class NewsGroupDataset(Dataset):
         """
         self.datasets = [data_list_first_sentence, data_list_second_sentence]
         self.target_list = target_list
+        lengths1 = [len(x) for x in data_list_first_sentence]
+        self.max_length1 = max(lengths1)
+        lengths2 = [len(x) for x in data_list_second_sentence]
+        self.max_length2 = max(lengths2)
         assert (len(self.datasets[0]) == len(self.target_list)) and (len(self.datasets[1]) == len(self.target_list)) 
 
     def __len__(self):
@@ -43,7 +47,7 @@ class NewsGroupDataset(Dataset):
         sentences = tuple(d[key] for d in self.datasets)
         lengths = tuple(len(d[key]) for d in self.datasets)
         label = self.target_list[key]
-        return [sentences,lengths, label]
+        return [sentences, lengths, label, self.max_length1, self.max_length2]
 
 def get_order(sorted_list, to_construct):
     order = []
@@ -107,8 +111,8 @@ def entailment_collate_func_concat(batch):
         # Do e first do this and then this? 
         first_sentence = sorted_first[i]
         second_sentence = sorted_second[i]
-        first_sentence.extend([0]*(MAX_SENTENCE_LENGTH_FIRST- len(first_sentence)))
-        second_sentence.extend([0]*(MAX_SENTENCE_LENGTH_SECOND-len(second_sentence)))
+        first_sentence.extend([0]*(batch[0][3]- len(first_sentence)))
+        second_sentence.extend([0]*(batch[0][4]-len(second_sentence)))
         data_list_first.append(first_sentence)
         data_list_second.append(second_sentence)
     return [torch.LongTensor(data_list_first), torch.LongTensor(data_list_second), torch.LongTensor(length_first),  torch.LongTensor(length_second), torch.LongTensor( order_one_to_pass), torch.LongTensor( order_two_to_pass), torch.LongTensor(label_list)]
